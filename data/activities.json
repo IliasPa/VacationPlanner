@@ -6,7 +6,7 @@
     "cat": "Culture",
     "date": "Jun 15",
     "price": 45,
-    "deleted": false
+    "deleted": true
   },
   {
     "id": 21,

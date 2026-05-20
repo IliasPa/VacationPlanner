@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="image.png" alt="Vacation Planner" width="120" />
+</p>
+
 # Vacation Planner
 
 A personal trip planning app that runs locally in your browser. Track transport legs, accommodations, activities, and expenses across multiple destinations — with live currency conversion, PDF attachments, and expense splitting for groups.
@@ -35,7 +39,7 @@ Activities grouped by city. Add an activity with a name, category (Culture, Food
 
 ### Expenses
 A full budget breakdown:
-- Progress bar showing how much of the budget has been used
+- Progress bar showing how much of the budget has been used — click the budget number to edit it inline
 - Pie chart and category bars (Accommodations, Flights, Activities, Extras)
 - **Extra Expenses** section for anything that doesn't fit the other tabs — transport, insurance, shopping, etc. Each expense can have a "Paid by" person and a list of who it involves, and the app will calculate how much each person owes under **Who Pays Who**.
 
@@ -70,9 +74,10 @@ Click the pencil icon (✏️) next to the trip dates in the header to edit:
 - Trip name
 - Start and end dates (format: dd/mm)
 - Year
-- Cities — you can rename them, remove them, or add new ones
+- Cities — rename, remove, or add new ones (in order)
+- People — the group travelling; used to assign "Paid by" and "Involves" in expenses
 
-Click **Save** to apply changes.
+Click **Save** to apply changes. All edits are saved to `trip.json`.
 
 ---
 
@@ -82,9 +87,36 @@ All data is saved locally in the `data/` folder as JSON files. Nothing is sent a
 
 | File | Contents |
 |---|---|
-| `trip.json` | Trip name, dates, cities, saved currency pair |
+| `trip.json` | Trip name, dates, cities, people, budget, saved currency pair |
 | `flights.json` | Transport legs |
 | `stays.json` | Accommodations |
 | `activities.json` | Activities |
 | `misc.json` | Extra expenses |
 | `pdfs/` | Uploaded PDF files |
+
+---
+
+## Changelog
+
+### v2.2
+- **People management** — add/rename/remove travellers in the header edit form (pencil icon); the list drives "Paid by" and "Involves" in the Expenses tab
+- **Editable budget** — click the budget number in the Expenses progress bar to edit it inline; saved immediately to `trip.json`
+
+### v2.1
+- **PDF side-panel preview** — when adding a Flight or Stay, the uploaded PDF appears in a side panel next to the form so you can read it while filling in details
+- **Grouped Trash** — deleted items are now grouped by category (Flights, Stays, Activities, Expenses) for easier navigation
+- **Timestamp-based IDs** — new items get stable, unique IDs derived from the current timestamp
+
+### v2.0
+- **Transport types** — Flights tab expanded to support Train, Ferry, Bus, Car, and Other legs, each with its own emoji
+- **Live currency conversion** — two-currency header selector with real-time rates from frankfurter.app; converted amounts shown throughout the app
+- **PDF attachments** — attach PDFs to transport legs and stays; stored in `data/pdfs/`
+- **In-app PDF preview** — full-screen PDF overlay opened by clicking the gold-bordered emoji circle (transport) or the 📄 button (stays)
+
+### v1.1
+- Added README with setup instructions
+- Added Windows launcher (`start.bat`)
+- Miscellaneous data updates
+
+### v1.0
+- Initial release: trip overview, transport legs, accommodations, activities, and expense tracking with budget breakdown and expense splitting

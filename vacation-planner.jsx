@@ -532,6 +532,8 @@ export default function VacationPlanner() {
   const [trip, setTrip] = useState({
     name: "Summer Escape 2025",
     cities: ["Athens", "Santorini", "Rome", "Paris"],
+    people: ["Ilias", "Diana", "Ilias2", "Diana2"],
+    budget: 12000,
     start: "Jun 15",
     end: "Jul 5",
     year: 2025,
@@ -540,6 +542,8 @@ export default function VacationPlanner() {
   const [tripForm, setTripForm] = useState({
     name: "Summer Escape 2025",
     cities: ["Athens", "Santorini", "Rome", "Paris"],
+    people: ["Ilias", "Diana", "Ilias2", "Diana2"],
+    budget: 12000,
     start: "Jun 15",
     end: "Jul 5",
     year: 2025,
@@ -562,6 +566,8 @@ export default function VacationPlanner() {
   const [addS, setAddS] = useState(false);
   const [addA, setAddA] = useState(false);
   const [addM, setAddM] = useState(false);
+  const [editBudget, setEditBudget] = useState(false);
+  const [budgetInput, setBudgetInput] = useState("");
   const [flightPdfSide, setFlightPdfSide] = useState(null);
   const [stayPdfSide, setStayPdfSide] = useState(null);
 
@@ -696,7 +702,7 @@ export default function VacationPlanner() {
     .filter((x) => !x.deleted)
     .reduce((s, x) => s + x.price, 0);
   const grand = fTotal + sTotal + aTotal + mTotal;
-  const BUDGET = 12000;
+  const BUDGET = trip.budget ?? 12000;
 
   const saveTrip = () => {
     setTrip(tripForm);
@@ -707,6 +713,18 @@ export default function VacationPlanner() {
     });
     setEditTrip(false);
   };
+  const saveBudget = () => {
+    const val = +budgetInput;
+    if (!val || val <= 0) { setEditBudget(false); return; }
+    setTrip((p) => ({ ...p, budget: val }));
+    setTripForm((p) => ({ ...p, budget: val }));
+    fetch("/api/trip", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ budget: val }),
+    });
+    setEditBudget(false);
+  };
   const tripStartD = parseTripDate(trip.start, trip.year);
   const tripEndD = parseTripDate(trip.end, trip.year);
   const tripDays =
@@ -715,6 +733,7 @@ export default function VacationPlanner() {
       : "?";
   const tripLabel = `${trip.start} – ${trip.end}, ${trip.year}`;
   const cities = trip.cities?.length ? trip.cities : CITIES;
+  const travelers = trip.people?.length ? trip.people : TRAVELERS;
   const miscCities = ["General", ...cities];
 
   const trash = [
@@ -859,8 +878,8 @@ export default function VacationPlanner() {
       date: "",
       price: "",
       city: "General",
-      paidBy: TRAVELERS[0],
-      involves: [...TRAVELERS],
+      paidBy: travelers[0],
+      involves: [...travelers],
     });
     setAddM(false);
   };
@@ -1701,7 +1720,40 @@ export default function VacationPlanner() {
           >
             <span>Budget progress</span>
             <span style={{ fontWeight: 700 }}>
-              {pc(grand)} / {pc(BUDGET)}
+              {pc(grand)} /{" "}
+              {editBudget ? (
+                <input
+                  autoFocus
+                  type="number"
+                  value={budgetInput}
+                  onChange={(e) => setBudgetInput(e.target.value)}
+                  onBlur={saveBudget}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveBudget();
+                    if (e.key === "Escape") setEditBudget(false);
+                  }}
+                  style={{
+                    width: 90,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    fontFamily: "inherit",
+                    color: "#64748b",
+                    background: "#f8fafc",
+                    border: "1px solid #c9913b",
+                    borderRadius: 5,
+                    padding: "1px 6px",
+                    outline: "none",
+                  }}
+                />
+              ) : (
+                <span
+                  onClick={() => { setBudgetInput(BUDGET); setEditBudget(true); }}
+                  title="Click to edit budget"
+                  style={{ cursor: "pointer", borderBottom: "1px dotted #94a3b8" }}
+                >
+                  {pc(BUDGET)}
+                </span>
+              )}
             </span>
           </div>
           <div
@@ -1947,7 +1999,7 @@ export default function VacationPlanner() {
               k="paidBy"
               val={nm}
               set={setNm}
-              opts={TRAVELERS}
+              opts={travelers}
             />
           </div>
           <div>
@@ -1964,7 +2016,7 @@ export default function VacationPlanner() {
               Involves
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {TRAVELERS.map((t) => (
+              {travelers.map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -2616,6 +2668,87 @@ export default function VacationPlanner() {
                         setTripForm((p) => ({
                           ...p,
                           cities: [...p.cities, ""],
+                        }))
+                      }
+                      style={{
+                        background: "#334155",
+                        border: "none",
+                        borderRadius: 7,
+                        cursor: "pointer",
+                        color: "#94a3b8",
+                        fontSize: 12,
+                        padding: "6px 12px",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+                <div style={{ width: "100%", marginTop: 4 }}>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "#94a3b8",
+                      fontWeight: 700,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      marginBottom: 8,
+                    }}
+                  >
+                    People
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 6,
+                      alignItems: "center",
+                    }}
+                  >
+                    {(tripForm.people ?? []).map((person, i) => (
+                      <div
+                        key={i}
+                        style={{ display: "flex", alignItems: "center", gap: 4 }}
+                      >
+                        <input
+                          value={person}
+                          onChange={(e) =>
+                            setTripForm((p) => ({
+                              ...p,
+                              people: p.people.map((c, j) =>
+                                j === i ? e.target.value : c,
+                              ),
+                            }))
+                          }
+                          style={{ ...inp, width: 110 }}
+                        />
+                        <button
+                          onClick={() =>
+                            setTripForm((p) => ({
+                              ...p,
+                              people: p.people.filter((_, j) => j !== i),
+                            }))
+                          }
+                          style={{
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            color: "#64748b",
+                            fontSize: 18,
+                            padding: "0 2px",
+                            lineHeight: 1,
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() =>
+                        setTripForm((p) => ({
+                          ...p,
+                          people: [...(p.people ?? []), ""],
                         }))
                       }
                       style={{

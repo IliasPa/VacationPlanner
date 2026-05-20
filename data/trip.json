@@ -6,6 +6,13 @@
     "Rome",
     "Paris"
   ],
+  "people": [
+    "Ilias",
+    "Diana",
+    "Ilias2",
+    "Diana2"
+  ],
+  "budget": 15000,
   "start": "Jul 25",
   "end": "Aug 9",
   "year": 2025,
