@@ -1,5 +1,5 @@
 {
-  "laundryCycle": 3,
+  "laundryCycle": 1,
   "lists": [
     {
       "id": "beach",
@@ -1440,10 +1440,10 @@
             {
               "id": "custom-1779315495963",
               "name": "czfgd",
-              "qty": 2,
+              "qty": 1,
               "perDay": false,
               "checked": false,
-              "calc": "laundry"
+              "calc": "fixed"
             }
           ]
         },
@@ -1455,10 +1455,17 @@
             {
               "id": "custom-1779316407801",
               "name": "hgf",
-              "qty": 17,
+              "qty": 2,
               "perDay": false,
               "checked": false,
-              "calc": "fixed"
+              "calc": "laundry"
+            },
+            {
+              "id": "custom-1779376375234",
+              "name": "confortable cloths",
+              "qty": 1,
+              "perDay": false,
+              "checked": false
             }
           ]
         },
