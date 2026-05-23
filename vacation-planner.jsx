@@ -822,8 +822,13 @@ export default function VacationPlanner() {
   });
 
   useEffect(() => {
+    // Seed localStorage from bundled JSON on first visit so api.post/patch/del
+    // always reads a full dataset (not an empty array) when localStorage is blank.
     const ls = (key, def) => {
-      try { return JSON.parse(localStorage.getItem(`vp_${key}`) || "null") ?? def; } catch { return def; }
+      const raw = localStorage.getItem(`vp_${key}`);
+      if (raw !== null) { try { return JSON.parse(raw); } catch {} }
+      try { localStorage.setItem(`vp_${key}`, JSON.stringify(def)); } catch {}
+      return def;
     };
     setFlights(ls("flights", defaultFlights));
     setStays(ls("stays", defaultStays));
@@ -1027,7 +1032,7 @@ export default function VacationPlanner() {
         );
         if (!pushRes.ok) {
           const err = await pushRes.json().catch(() => ({}));
-          throw new Error(err.message || `Failed to push ${fileMap[resource]}`);
+          throw new Error(`${err.message || "Failed"} — pushing to github.com/${owner}/${repo}/${filePath}`);
         }
       }
       setDirtyFiles(new Set());
