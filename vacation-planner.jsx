@@ -2,6 +2,13 @@ import { useState, useEffect, useRef } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import defaultFlights from "./data/flights.json";
+import defaultStays from "./data/stays.json";
+import defaultActs from "./data/activities.json";
+import defaultMisc from "./data/misc.json";
+import defaultNextspot from "./data/nextspot.json";
+import defaultPackinglist from "./data/packinglist.json";
+import defaultTrip from "./data/trip.json";
 import {
   Trash2,
   RotateCcw,
@@ -14,6 +21,8 @@ import {
   Compass,
   Check,
   Pencil,
+  Github,
+  Loader2,
 } from "lucide-react";
 
 const GOLD = "#c9913b";
@@ -209,20 +218,26 @@ const uid = () => {
   );
 };
 
+const lsGet = (r) => {
+  try { return JSON.parse(localStorage.getItem(`vp_${r}`) || "null") ?? []; } catch { return []; }
+};
+const lsSet = (r, data) => {
+  try { localStorage.setItem(`vp_${r}`, JSON.stringify(data)); } catch {}
+};
+
 const api = {
-  post: (r, body) =>
-    fetch(`/api/${r}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-  patch: (r, id, body) =>
-    fetch(`/api/${r}/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-  del: (r, id) => fetch(`/api/${r}/${id}`, { method: "DELETE" }),
+  post: (r, body) => {
+    const items = lsGet(r);
+    items.push(body);
+    lsSet(r, items);
+  },
+  patch: (r, id, body) => {
+    const items = lsGet(r);
+    const idx = items.findIndex((x) => x.id === Number(id));
+    if (idx !== -1) items[idx] = { ...items[idx], ...body };
+    lsSet(r, items);
+  },
+  del: (r, id) => lsSet(r, lsGet(r).filter((x) => x.id !== Number(id))),
 };
 
 const CAT_COLOR = {
@@ -639,7 +654,7 @@ const WorldMap = ({ nextSpots, onCountryClick }) => {
     }).addTo(map);
     mapRef.current = map;
 
-    fetch("/countries.geojson")
+    fetch(`${import.meta.env.BASE_URL}countries.geojson`)
       .then((r) => r.json())
       .then((data) => {
         const layer = L.geoJSON(data, {
@@ -758,6 +773,23 @@ export default function VacationPlanner() {
   const [editSpotData, setEditSpotData] = useState(null);
   const geoTimerRef = useRef(null);
 
+  const [githubConfig, setGithubConfig] = useState(() => {
+    try {
+      const cfg = JSON.parse(localStorage.getItem("vp_github") || "null");
+      if (cfg) {
+        cfg.owner = (cfg.owner || "").trim().replace(/\s+/g, "-");
+        cfg.repo = (cfg.repo || "").trim().replace(/\s+/g, "-");
+        localStorage.setItem("vp_github", JSON.stringify(cfg));
+      }
+      return cfg;
+    } catch { return null; }
+  });
+  const [dirtyFiles, setDirtyFiles] = useState(new Set());
+  const [githubSyncing, setGithubSyncing] = useState(false);
+  const [showGithubModal, setShowGithubModal] = useState(false);
+  const [githubForm, setGithubForm] = useState({ token: "", owner: "", repo: "", branch: "main", dataPath: "data/" });
+  const dataLoadedRef = useRef({});
+
   const [nf, setNf] = useState({
     type: "Flight",
     from: "",
@@ -798,42 +830,63 @@ export default function VacationPlanner() {
   });
 
   useEffect(() => {
-    fetch("/api/flights")
-      .then((r) => r.json())
-      .then(setFlights);
-    fetch("/api/stays")
-      .then((r) => r.json())
-      .then(setStays);
-    fetch("/api/activities")
-      .then((r) => r.json())
-      .then(setActs);
-    fetch("/api/misc")
-      .then((r) => r.json())
-      .then(setMisc);
-    fetch("/api/trip")
-      .then((r) => r.json())
-      .then((d) => {
-        setTrip(d);
-        setTripForm(d);
-        if (d.fxC1) setFxC1(d.fxC1);
-        if (d.fxC2) setFxC2(d.fxC2);
-        fxSaveReady.current = true;
-      });
-    fetch("/api/packinglist")
-      .then((r) => r.json())
-      .then((d) => {
-        setPackingData(d);
-        if (d.lists?.length) setActiveListId(d.lists[0].id);
-      });
-    fetch("/api/nextspot")
-      .then((r) => r.json())
-      .then(setNextSpots);
+    // Seed localStorage from bundled JSON on first visit so api.post/patch/del
+    // always reads a full dataset (not an empty array) when localStorage is blank.
+    const ls = (key, def) => {
+      const raw = localStorage.getItem(`vp_${key}`);
+      if (raw !== null) { try { return JSON.parse(raw); } catch {} }
+      try { localStorage.setItem(`vp_${key}`, JSON.stringify(def)); } catch {}
+      return def;
+    };
+    setFlights(ls("flights", defaultFlights));
+    setStays(ls("stays", defaultStays));
+    setActs(ls("activities", defaultActs));
+    setMisc(ls("misc", defaultMisc));
+    const tripData = ls("trip", defaultTrip);
+    setTrip(tripData);
+    setTripForm(tripData);
+    if (tripData.fxC1) setFxC1(tripData.fxC1);
+    if (tripData.fxC2) setFxC2(tripData.fxC2);
+    fxSaveReady.current = true;
+    const packData = ls("packinglist", defaultPackinglist);
+    setPackingData(packData);
+    if (packData.lists?.length) setActiveListId(packData.lists[0].id);
+    setNextSpots(ls("nextspot", defaultNextspot));
   }, []);
+
+  useEffect(() => {
+    if (!dataLoadedRef.current.flights) { dataLoadedRef.current.flights = true; return; }
+    setDirtyFiles((p) => { const s = new Set(p); s.add("flights"); return s; });
+  }, [flights]);
+  useEffect(() => {
+    if (!dataLoadedRef.current.stays) { dataLoadedRef.current.stays = true; return; }
+    setDirtyFiles((p) => { const s = new Set(p); s.add("stays"); return s; });
+  }, [stays]);
+  useEffect(() => {
+    if (!dataLoadedRef.current.acts) { dataLoadedRef.current.acts = true; return; }
+    setDirtyFiles((p) => { const s = new Set(p); s.add("activities"); return s; });
+  }, [acts]);
+  useEffect(() => {
+    if (!dataLoadedRef.current.misc) { dataLoadedRef.current.misc = true; return; }
+    setDirtyFiles((p) => { const s = new Set(p); s.add("misc"); return s; });
+  }, [misc]);
+  useEffect(() => {
+    if (!dataLoadedRef.current.nextSpots) { dataLoadedRef.current.nextSpots = true; return; }
+    setDirtyFiles((p) => { const s = new Set(p); s.add("nextspot"); return s; });
+  }, [nextSpots]);
+  useEffect(() => {
+    if (!dataLoadedRef.current.packingData) { dataLoadedRef.current.packingData = true; return; }
+    setDirtyFiles((p) => { const s = new Set(p); s.add("packinglist"); return s; });
+  }, [packingData]);
+  useEffect(() => {
+    if (!dataLoadedRef.current.trip) { dataLoadedRef.current.trip = true; return; }
+    setDirtyFiles((p) => { const s = new Set(p); s.add("trip"); return s; });
+  }, [trip]);
 
   useEffect(() => {
     setFxLoading(true);
     setFxRate(null);
-    fetch(`/api/fx?from=${fxC1}&to=${fxC2}`)
+    fetch(`https://open.er-api.com/v6/latest/${fxC1}`)
       .then((r) => r.json())
       .then((d) => {
         setFxRate(d.rates?.[fxC2] ?? null);
@@ -844,11 +897,10 @@ export default function VacationPlanner() {
 
   useEffect(() => {
     if (!fxSaveReady.current) return;
-    fetch("/api/trip", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fxC1, fxC2 }),
-    });
+    try {
+      const stored = JSON.parse(localStorage.getItem("vp_trip") || "null");
+      if (stored) lsSet("trip", { ...stored, fxC1, fxC2 });
+    } catch {}
   }, [fxC1, fxC2]);
 
   useEffect(() => {
@@ -861,10 +913,19 @@ export default function VacationPlanner() {
       setNnsGeoStatus("loading");
       try {
         const q = [nns.name.trim(), nns.country.trim()].filter(Boolean).join(", ");
-        const r = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
-        const d = await r.json();
-        if (d.lat) {
-          const cc = d.countryCode?.toUpperCase() || "";
+        const r = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&addressdetails=1`
+        );
+        const results = await r.json();
+        if (results.length) {
+          const top = results[0];
+          const d = {
+            lat: top.lat,
+            lon: top.lon,
+            country: top.address?.country || "",
+            countryCode: (top.address?.country_code || "").toUpperCase(),
+          };
+          const cc = d.countryCode;
           const continent = CONTINENT_MAP[cc] || null;
           setNnsGeoStatus({ country: d.country, continent, countryCode: cc, lat: parseFloat(d.lat), lon: parseFloat(d.lon) });
           setNns((p) => ({
@@ -936,12 +997,72 @@ export default function VacationPlanner() {
 
   const saveTrip = () => {
     setTrip(tripForm);
-    fetch("/api/trip", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(tripForm),
-    });
+    lsSet("trip", tripForm);
     setEditTrip(false);
+  };
+
+  const pushToGithub = async () => {
+    if (!githubConfig || githubSyncing) return;
+    setGithubSyncing(true);
+    const { token, owner, repo, branch, dataPath } = githubConfig;
+    const branchName = branch || "main";
+    const prefix = dataPath || "data/";
+    const fileMap = {
+      flights: "flights.json", stays: "stays.json", activities: "activities.json",
+      misc: "misc.json", nextspot: "nextspot.json", packinglist: "packinglist.json", trip: "trip.json",
+    };
+    const filesToPush = [...dirtyFiles].filter((r) => fileMap[r]);
+    const api = (path, opts = {}) => fetch(`https://api.github.com${path}`, {
+      ...opts,
+      headers: { Authorization: `token ${token}`, "Content-Type": "application/json", Accept: "application/vnd.github.v3+json" },
+    });
+    try {
+      // 1. get current commit SHA + tree SHA
+      const refRes = await api(`/repos/${owner}/${repo}/git/ref/heads/${branchName}`);
+      if (!refRes.ok) throw new Error((await refRes.json().catch(() => ({}))).message || "Could not read branch ref");
+      const { object: { sha: commitSha } } = await refRes.json();
+
+      const commitRes = await api(`/repos/${owner}/${repo}/git/commits/${commitSha}`);
+      const { tree: { sha: treeSha } } = await commitRes.json();
+
+      // 2. build tree blobs for every dirty file
+      const treeItems = await Promise.all(filesToPush.map(async (resource) => {
+        const raw = localStorage.getItem(`vp_${resource}`);
+        const content = JSON.stringify(raw ? JSON.parse(raw) : [], null, 2);
+        const blobRes = await api(`/repos/${owner}/${repo}/git/blobs`, {
+          method: "POST", body: JSON.stringify({ content, encoding: "utf-8" }),
+        });
+        const { sha } = await blobRes.json();
+        return { path: `${prefix}${fileMap[resource]}`, mode: "100644", type: "blob", sha };
+      }));
+
+      // 3. create new tree
+      const newTreeRes = await api(`/repos/${owner}/${repo}/git/trees`, {
+        method: "POST", body: JSON.stringify({ base_tree: treeSha, tree: treeItems }),
+      });
+      const { sha: newTreeSha } = await newTreeRes.json();
+
+      // 4. create commit
+      const newCommitRes = await api(`/repos/${owner}/${repo}/git/commits`, {
+        method: "POST", body: JSON.stringify({
+          message: `sync: update ${filesToPush.map((r) => fileMap[r]).join(", ")}`,
+          tree: newTreeSha, parents: [commitSha],
+        }),
+      });
+      const { sha: newCommitSha } = await newCommitRes.json();
+
+      // 5. update branch ref
+      const updateRes = await api(`/repos/${owner}/${repo}/git/refs/heads/${branchName}`, {
+        method: "PATCH", body: JSON.stringify({ sha: newCommitSha }),
+      });
+      if (!updateRes.ok) throw new Error((await updateRes.json().catch(() => ({}))).message || "Could not update ref");
+
+      setDirtyFiles(new Set());
+    } catch (e) {
+      alert(`GitHub sync failed: ${e.message}`);
+    } finally {
+      setGithubSyncing(false);
+    }
   };
   const saveBudget = () => {
     const val = +budgetInput;
@@ -949,13 +1070,12 @@ export default function VacationPlanner() {
       setEditBudget(false);
       return;
     }
-    setTrip((p) => ({ ...p, budget: val }));
-    setTripForm((p) => ({ ...p, budget: val }));
-    fetch("/api/trip", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ budget: val }),
+    setTrip((p) => {
+      const updated = { ...p, budget: val };
+      lsSet("trip", updated);
+      return updated;
     });
+    setTripForm((p) => ({ ...p, budget: val }));
     setEditBudget(false);
   };
   const tripStartD = parseTripDate(trip.start, trip.year);
@@ -2497,11 +2617,7 @@ export default function VacationPlanner() {
 
     const savePacking = (newData) => {
       setPackingData(newData);
-      fetch("/api/packinglist", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newData),
-      });
+      lsSet("packinglist", newData);
     };
 
     const CALC_OPTIONS = [
@@ -3992,7 +4108,11 @@ export default function VacationPlanner() {
               }
 
               return (
-                <div key={spot.id} style={{ ...card, display: "flex", alignItems: "flex-start", gap: 14 }}>
+                <div
+                  key={spot.id}
+                  style={{ ...card, display: "flex", alignItems: "flex-start", gap: 14, cursor: "pointer" }}
+                  onClick={() => { setEditingSpotId(spot.id); setEditSpotData({ ...spot }); }}
+                >
                   <div style={{ width: 36, height: 36, borderRadius: 10, background: spot.visited ? "#d1fae5" : "#f0f9ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
                     {spot.visited ? <Check size={18} color="#059669" /> : <Compass size={18} color="#2563eb" />}
                   </div>
@@ -4019,10 +4139,7 @@ export default function VacationPlanner() {
                       </div>
                     )}
                   </div>
-                  <div style={{ display: "flex", gap: 2, flexShrink: 0, marginTop: -2 }}>
-                    <Btn variant="ghost" onClick={() => { setEditingSpotId(spot.id); setEditSpotData({ ...spot }); }}>
-                      <Pencil size={13} />
-                    </Btn>
+                  <div style={{ display: "flex", gap: 2, flexShrink: 0, marginTop: -2 }} onClick={(e) => e.stopPropagation()}>
                     <Btn variant="ghost" onClick={() => delSpot(spot.id)}>
                       <Trash2 size={14} />
                     </Btn>
@@ -4055,6 +4172,7 @@ export default function VacationPlanner() {
         minHeight: "700px",
       }}
     >
+      <style>{`@keyframes vp-spin { to { transform: rotate(1turn) } }`}</style>
       {/* ─── Header ─── */}
       <div style={{ background: NAVY, color: "white", padding: "22px 26px 0" }}>
         <div
@@ -4482,7 +4600,7 @@ export default function VacationPlanner() {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: "flex", overflowX: "auto", marginTop: 2 }}>
+        <div style={{ display: "flex", overflowX: "auto", marginTop: 2, alignItems: "center" }}>
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -4503,6 +4621,48 @@ export default function VacationPlanner() {
               {t.label}
             </button>
           ))}
+          <div style={{ marginLeft: "auto", paddingRight: 6, flexShrink: 0 }}>
+            <button
+              onClick={() => {
+                if (!githubConfig) {
+                  setGithubForm({ token: "", owner: "", repo: "", branch: "main", dataPath: "data/" });
+                  setShowGithubModal(true);
+                } else if (dirtyFiles.size > 0) {
+                  pushToGithub();
+                } else {
+                  setGithubForm({ token: githubConfig.token, owner: githubConfig.owner, repo: githubConfig.repo, branch: githubConfig.branch || "main", dataPath: githubConfig.dataPath || "data/" });
+                  setShowGithubModal(true);
+                }
+              }}
+              title={
+                !githubConfig
+                  ? "Set up GitHub sync"
+                  : dirtyFiles.size > 0
+                  ? `${dirtyFiles.size} file(s) changed — click to push`
+                  : "All synced — click to edit config"
+              }
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "6px 8px",
+                borderRadius: 7,
+                display: "flex",
+                alignItems: "center",
+                color: !githubConfig
+                  ? "#475569"
+                  : githubSyncing
+                  ? "#94a3b8"
+                  : dirtyFiles.size > 0
+                  ? "#ca8a04"
+                  : "#16a34a",
+              }}
+            >
+              {githubSyncing
+                ? <Loader2 size={16} style={{ animation: "vp-spin 1s linear infinite" }} />
+                : <Github size={16} />}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -4517,6 +4677,63 @@ export default function VacationPlanner() {
         {tab === "trash" && renderTrash()}
         {tab === "nextspot" && renderNextSpot()}
       </div>
+
+      {/* ─── GitHub Sync Modal ─── */}
+      {showGithubModal && (
+        <div
+          onClick={() => setShowGithubModal(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "white", borderRadius: 12, padding: 24, width: "min(90vw, 420px)", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: NAVY, fontFamily: "Georgia, serif", display: "flex", alignItems: "center", gap: 8 }}>
+                <Github size={18} /> GitHub Sync
+              </div>
+              <button onClick={() => setShowGithubModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 20, lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {[
+                { key: "token", label: "Personal Access Token", placeholder: "ghp_...", type: "password" },
+                { key: "owner", label: "Repository Owner", placeholder: "username or org" },
+                { key: "repo", label: "Repository Name", placeholder: "vacation-planner" },
+                { key: "branch", label: "Branch", placeholder: "main" },
+                { key: "dataPath", label: "Data Folder Path in Repo", placeholder: "data/" },
+              ].map(({ key, label, placeholder, type }) => (
+                <div key={key}>
+                  <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
+                  <input
+                    style={inp}
+                    type={type || "text"}
+                    placeholder={placeholder}
+                    value={githubForm[key]}
+                    onChange={(e) => setGithubForm((p) => ({ ...p, [key]: e.target.value }))}
+                  />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+              <Btn variant="gold" onClick={() => {
+                const cfg = { ...githubForm, token: githubForm.token.trim(), owner: githubForm.owner.trim().replace(/\s+/g, "-"), repo: githubForm.repo.trim().replace(/\s+/g, "-") };
+                if (!cfg.token || !cfg.owner || !cfg.repo) return;
+                setGithubConfig(cfg);
+                localStorage.setItem("vp_github", JSON.stringify(cfg));
+                setShowGithubModal(false);
+              }}>Save</Btn>
+              {githubConfig && (
+                <Btn variant="danger" onClick={() => {
+                  setGithubConfig(null);
+                  localStorage.removeItem("vp_github");
+                  setShowGithubModal(false);
+                }}>Remove</Btn>
+              )}
+              <Btn onClick={() => setShowGithubModal(false)}>Cancel</Btn>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ─── PDF Preview Modal ─── */}
       {pdfPreview && (
